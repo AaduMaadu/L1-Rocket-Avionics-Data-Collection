@@ -1,114 +1,121 @@
-#include <Arduino.h>
-#include <SPI.h>
-#include <SD.h>
+#include <Arduino.h>      // Arduino framework
+#include "FS.h"           // Filesystem library
+#include "SD.h"           // SD card library
+#include "SPI.h"          // SPI communication for SD card
 #include <Wire.h>
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BMP280.h>
 
-/*
-CS = 5
-MOSI = 23
-MISO 19
-SCK 18
-*/
+Adafruit_BMP280 bmp; // Create an instance of the BMP280 sensor
 
-#define LED 2
+// Sea level pressure in hPa (can be adjusted for more accurate altitude readings)
+#define SEALEVELPRESSURE_HPA (1013.25)
 
-#define SEA_LVL_PRESSURE 1013.25 //hectopascal
-Adafruit_BMP280 bmp; //I2C Comm Protocol
-
-File myFile; //Define myFile obj
-const int CS = 5; //Set the GOIP pin number for the chip select
-
-void WriteFile(const char* path) {
-  myFile = SD.open(path, FILE_WRITE); //Can only open one file at a time
-
-  if (myFile) {
-    Serial.printf("Writing to %s", path);
-    myFile.print("Temperature = ");
-    myFile.print(1.8 * bmp.readTemperature() + 32);
-    myFile.println(" *F");
-    myFile.close();
-    Serial.println("completed");
-  }
-  else {
-    Serial.println("Error opening the file");
-    Serial.println(path);
-  }
-}
-
-void ReadFile(const char* path) {
-  myFile = SD.open(path, FILE_READ);
-
-  if (myFile) {
-    Serial.printf("Reading from %s", path);
-    while (myFile.available()) {
-      Serial.print((char)myFile.read());
-    }
-    myFile.close();
-  }
-  else {
-    Serial.println("Error opening the file");
-    Serial.println(path);
-  }
-}
-
+//void setup()
 void setup() {
-  Serial.begin(9600);
-  delay(500);
+  Serial.begin(115200);
 
-  pinMode(LED, OUTPUT);
-
-  while (!Serial) { ; } //Wait for serial port to connect. Needed for native USB port only
-
-  Serial.println("Initializing SD card...");
-  if (!SD.begin(CS)) {
-    Serial.println("Intialization failed!");
-    return;
-  }
-  uint8_t cardType = SD.cardType();
-  if (cardType == CARD_NONE) {
-    Serial.println("No SD card attached");
-    return;
-  }
-  Serial.println("Initalization done");
-
-  bool status = bmp.begin(0x76);
-  if (!status) {
-    Serial.println("Could not find a valid BME280 Sensor! Data Collection Halted.");
-  }
-  else {
-    Serial.println("BMP 280 Found. Collecting Data...");
+  // Initialize the BMP280 sensor
+  if (!bmp.begin(0x76)) {  // 0x76 is the default I2C address for the BMP280
+    Serial.println("Could not find a valid BMP280 sensor, check wiring!");
+    while (1);
   }
 
-  WriteFile("/test.txt");
-  ReadFile("/test.txt");
+  // Set up oversampling for more precise readings
+  bmp.setSampling(Adafruit_BMP280::MODE_NORMAL,     // Operating Mode
+                  Adafruit_BMP280::SAMPLING_X2,     // Temp. oversampling
+                  Adafruit_BMP280::SAMPLING_X16,    // Pressure oversampling
+                  Adafruit_BMP280::FILTER_X16,      // Filtering
+                  Adafruit_BMP280::STANDBY_MS_500); // Standby time
+    
+
+    pinMode(2, OUTPUT); //initialize led
+    //initialize stopwatch
+    //start stopwatch
 }
 
+//void loop()
 void loop() {
-  digitalWrite(LED, HIGH);
-  delay(5000);
-  digitalWrite(LED, LOW);
-  delay(250);
-  digitalWrite(LED, HIGH);
-  delay(250);
-  digitalWrite(LED, LOW);
-  delay(250);
+    long time = (millis())/1000; // Get the current time in milliseconds
+  // Get temperature in Celsius
+  float temperature = bmp.readTemperature(); // Get temperature in Celsius
 
-  //Read Altitude
-  Serial.print(bmp.readAltitude(SEA_LVL_PRESSURE));
-  Serial.println(" m");
-  delay (100);
-  //Read Pressure
-  Serial.print(bmp.readPressure() / 100.0F);
-  Serial.println(" hPa");
+  // Get pressure in hPa
+  float pressure = bmp.readPressure() / 100.0F; // Convert to hPa (from Pa)
 
+  // Calculate altitude in meters
+  float altitude = bmp.readAltitude(SEALEVELPRESSURE_HPA); // Calculate altitude in meters
+
+  // Initialize the SPI communication for the SD card
+    SPI.begin();
+    // Initialize the SD card
+    if (!SD.begin(5)) {
+        Serial.println("Card Mount Failed");
+        return;
+    }
+
+    // Check SD card size and details
+    uint8_t cardType = SD.cardType();
+    if (cardType == CARD_NONE) {
+        Serial.println("No SD card attached");
+        return;
+    }
+
+  //open or create file on sd card to write or append data
+    File file = SD.open("/temperature.txt", FILE_APPEND);
+    File file2 = SD.open("/pressure.txt", FILE_APPEND);
+    File file3 = SD.open("/altitude.txt", FILE_APPEND);
+    
+    Serial.println("Writing to file...");
+
+    Serial.println(time);
+    
+    // Print the results to the serial monitor
+    Serial.print("Temperature = ");
+    Serial.print(temperature);
+    Serial.println(" °C");
+    //print on file
+    file.print("Time = ");
+    file.print(time);
+    file.print(" ");
+    file.print("Temperature = ");
+    file.print(temperature);
+    file.println(" °C");
+
+    // Print the results to the serial monitor
+    Serial.print("Pressure = ");
+    Serial.print(pressure);
+    Serial.println(" hPa");
+    //print on file
+    file2.print("Time = ");
+    file2.print(time);
+    file2.print(" ");
+    file2.print("Pressure = ");
+    file2.print(pressure);
+    file2.println(" hPa");
+
+    // Print the results to the serial monitor
+    Serial.print("Approx. Altitude = ");
+    Serial.print(altitude);
+    Serial.println(" m");
+    //print on file
+    file3.print("Time = ");
+    file3.print(time);
+    file3.print(" ");
+    file3.print("Approx. Altitude = ");
+    file3.print(altitude);
+    file3.println(" m");
+
+    // Close the file to ensure data is saved
+    file.close();
+    file2.close();
+    file3.close();
+
+    //turn on led to indicate data is written
+    digitalWrite(2, HIGH);
+    // Wait for 2 seconds before taking another reading
+    delay(2000);
+
+    //turn off led
+    digitalWrite(2, LOW);
 }
-
-// bmp.readTemperature();
-  // bmp.readPressure();
-  // bmp.readAltitude(seaLevelPressure);
-  // SD.begin(chipSelect);
-  // SD.open(filename, mode);
-  // file.write();
-  // file.read();
